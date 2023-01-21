@@ -1,9 +1,10 @@
 #include <iostream>
 #include <vector>
 #include <chrono>
-#include <queue>
+#include <deque>
 #include <random>
-
+#include <map>
+#include <algorithm>
 
 class Shape
 {
@@ -139,10 +140,11 @@ private:
             if (childs[3] != nullptr) { delete childs[3]; childs[3] = nullptr; }
         }
     public:
-        std::queue<Shape*> p_entries;
+        std::deque<Shape*> p_entries;
         bool isSplit = false;
         Node* childs[4] { nullptr, }; // LU, RU, LD, RD
         size_t capacity;
+        size_t entryCount = 0;
     public:
         bool push(Shape* p_entry) // true if pushed
         {
@@ -153,17 +155,19 @@ private:
             {
                 return false; 
             }
-            // included point
+            // included point (not splitted)
             if (!this->isSplit) 
             { 
-                this->p_entries.push(p_entry); 
+                this->p_entries.push_back(p_entry);
+                ++this->entryCount;
                 if (this->p_entries.size() > this->capacity) { this->split(); }
                 return true; 
             } 
-            if (childs[0]->push(p_entry)) return true;
-            if (childs[1]->push(p_entry)) return true;
-            if (childs[2]->push(p_entry)) return true;
-            if (childs[3]->push(p_entry)) return true;
+            // included point (splitted)
+            if (childs[0]->push(p_entry)) { ++this->entryCount; return true; }
+            if (childs[1]->push(p_entry)) { ++this->entryCount; return true; }
+            if (childs[2]->push(p_entry)) { ++this->entryCount; return true; }
+            if (childs[3]->push(p_entry)) { ++this->entryCount; return true; }
             return false;
         }
         void split()
@@ -178,7 +182,7 @@ private:
             while (!p_entries.empty()) 
             { 
                 auto p_entry = p_entries.front(); 
-                p_entries.pop();
+                p_entries.pop_front();
                 if (childs[0]->push(p_entry)) continue;
                 if (childs[1]->push(p_entry)) continue;
                 if (childs[2]->push(p_entry)) continue;
@@ -187,11 +191,46 @@ private:
         }
         void print(std::string prefix, std::string nodeID) const
         {
-            std::cout << prefix << nodeID << " : " << this->p_entries.size() << std::endl;
+            std::cout << prefix << nodeID << " : " << this->p_entries.size() << " (" << this->entryCount << ")" << std::endl;
             if (childs[0] != nullptr) childs[0]->print(prefix + '\t', "LU");
             if (childs[1] != nullptr) childs[1]->print(prefix + '\t', "RU");
             if (childs[2] != nullptr) childs[2]->print(prefix + '\t', "LD");
             if (childs[3] != nullptr) childs[3]->print(prefix + '\t', "RD");
+        }
+        bool erase(Shape* p_entry)
+        {
+            if (p_entry == nullptr) return false;
+            // not included point
+            if (this->getNearestPoint(p_entry->center) != p_entry->center) return false;
+            // included point (not splitted)
+            if (!this->isSplit) 
+            {
+                auto iter = std::find(this->p_entries.begin(), this->p_entries.end(), p_entry);
+                this->p_entries.erase(iter);
+                --this->entryCount;
+                return true; 
+            } 
+            // included point (splitted)
+            if (childs[0]->erase(p_entry)) { --this->entryCount; }
+            else if (childs[1]->erase(p_entry)) { --this->entryCount; }
+            else if (childs[2]->erase(p_entry)) { --this->entryCount; }
+            else if (childs[3]->erase(p_entry)) { --this->entryCount; }
+            if (this->entryCount < this->capacity/2) { this->shrink(); }
+            return true;
+        }
+        void shrink()
+        {
+            for (size_t idx = 0; idx < 4; ++idx) 
+            {
+                if (childs[idx] != nullptr) 
+                { 
+                    this->p_entries.insert(this->p_entries.cend(), childs[idx]->p_entries.cbegin(), childs[idx]->p_entries.cend()); 
+                    childs[idx]->p_entries.clear(); 
+                    delete childs[idx]; 
+                    childs[idx] = nullptr; 
+                }
+            }
+            this->isSplit = false;
         }
     };
 
@@ -205,11 +244,11 @@ public:
     ~QuadTree() 
     { 
         if (p_root != nullptr) delete p_root;
-        for (auto p_shape : p_shapes) { delete p_shape; }
+        for (auto p_shape : p_shapes) { delete p_shape.second; }
     }
 public:
     Node* p_root = nullptr;
-    std::vector<Shape*> p_shapes;
+    std::map<int64_t, Shape*> p_shapes;
     size_t capacity = 4;
     float center_x;
     float center_y;
@@ -219,8 +258,8 @@ public:
     void initialize(float center_x_, float center_y_, float radius_w_, float radius_h_, size_t capacity_)
     {
         if (this->p_root != nullptr) { delete this->p_root; this->p_root = nullptr; }
-        for (auto p_shape : p_shapes) { delete p_shape; }
-        this->p_shapes = std::vector<Shape*> {};
+        for (auto p_shape : p_shapes) { delete p_shape.second; }
+        this->p_shapes.clear();
         this->center_x = center_x_;
         this->center_y = center_y_;
         this->radius_w = radius_w_;
@@ -233,8 +272,8 @@ public:
     { 
         if (p_entry == nullptr) return false;
         if (this->p_root == nullptr) return false;
-        this->p_shapes.push_back(p_entry);
-        return this->p_root->push(p_entry);    
+        this->p_shapes.insert(std::pair<int64_t, Shape*>((int64_t)p_entry, p_entry));
+        return this->p_root->push(p_entry);
     }
 
     void print()
@@ -243,6 +282,20 @@ public:
         p_root->print("", "root");
     }
 
+    bool erase(Shape* p_entry)
+    {
+        if (p_entry == nullptr) return false;
+        if (this->p_root == nullptr) return false;
+        auto iter = this->p_shapes.find((int64_t)p_entry);
+        this->p_shapes.erase(iter);
+        delete p_entry;
+        return this->p_root->erase(p_entry);
+    }
+
+    bool isContain(Shape* p_entry)
+    {
+        return (this->p_shapes.find((int64_t)p_entry) == this->p_shapes.end()) ? false : true;
+    }
 };
 
 int main()
@@ -273,10 +326,11 @@ int main()
         if (!qt.push(p_entry)) std::cout << "push failed [x : " << x << ", y : " << y << "]" << std::endl;
     }
     qt.print();
+    for (auto p_shape : qt.p_shapes)
+    {
+        qt.erase(p_shape.second);
+    }
+    qt.print();
 }
-
-// todo : 삭제 가능하게 하기, qt 내부에 entry 를 순회 가능한 map 으로 저장하기, entry 마다 고유한 id 부여하기
-// todo : 노드마다 하위의 entry 개수 보유하기.
-// todo : 삭제 시 상위 노드의 entry 개수가 capacity 절반 이하면 split 취소 하기.
 
 // todo : entry 객체간 겹침 확인하고 색상 변경하기. entry-node 간 겹침 확인 후, 대상 노드에 속한 노드의 entry 들만 확인하기
