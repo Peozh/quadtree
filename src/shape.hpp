@@ -10,7 +10,7 @@ protected:
     {
     public:
         Point() = default;
-        Point(float x_, float y_) : x(x), y(y_) {}
+        Point(float x_, float y_) : x(x_), y(y_) {}
         Point(const Point& rhs) = default;
         Point(Point&& rhs) = default;
         Point& operator=(const Point& rhs) = default;
