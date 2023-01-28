@@ -156,7 +156,7 @@ private:
 public:
     QuadTree() = delete;
     QuadTree(float center_x_, float center_y_, float radius_w_, float radius_h_, size_t capacity_, float min_node_radius_ = 10.0f)
-     : center_x(center_x_), center_y(center_y), radius_w(radius_w_), radius_h(radius_h_), capacity(capacity_), min_node_radius(min_node_radius_)
+     : center_x(center_x_), center_y(center_y_), radius_w(radius_w_), radius_h(radius_h_), capacity(capacity_), min_node_radius(min_node_radius_)
     {
         this->p_root = new Node(center_x_, center_y_, radius_w_, radius_h_, capacity_, nullptr, min_node_radius_);
     }
